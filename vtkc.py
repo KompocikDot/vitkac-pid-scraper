@@ -7,12 +7,9 @@ from datetime import datetime
 class Scraper:
      def __init__(self):
           self.proxy = self.Get_proxy()
-          #TODO dodac filtrowanie, ponizej lista jest pod dwa webhooki, filtrowany i nie
           self.webhooks = ["", ""]
           self.last = 1604825
           self.sleeper = 10
-          self.last_item_name = "BLUZA SW0304 21A036E-FADED BLACK-34"
-          self.last_item_slug = "bluza-sw0031-21a059e-ecru-42"
           self.Read_last()
 
      def Read_last(self):
