@@ -39,7 +39,7 @@ class Scraper:
      def Scrape(self):
           while True:
                try:
-                    resp = requests.get(f"https://www.vitkac.com/product/axGetProductDetail?id={self.last}")
+                    resp = requests.get(f"https://www.vitkac.com/product/axGetProductDetail?id={self.last}", proxy=self.proxy)
                     if resp.status_code != 200:
                          time.sleep(self.sleeper)
                          print(f"{datetime.now()} | No pid created")
