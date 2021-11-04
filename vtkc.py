@@ -12,6 +12,7 @@ class Scraper:
           self.sleeper = 10
           self.Read_last()
 
+
      def Read_last(self):
           with open("data.txt", "r") as f:
                data = f.readlines()
@@ -20,10 +21,12 @@ class Scraper:
           self.last_item_name = data[1].strip()
           self.last_item_slug = data[2].strip()
 
+
      def Save_last(self):
           with open("data.txt", "w") as f:
                data = [self.last, self.last_item_name, self.last_item_slug]
                f.writelines(data)
+
 
      def Get_proxy(self):
           with open("proxy.txt", "r") as f:
@@ -35,6 +38,7 @@ class Scraper:
                usr = proxy[2]
                pwd = proxy[3]
                return {"http": f"http://{usr}:{pwd}@{ip}:{port}", "https": f"https://{usr}:{pwd}@{ip}:{port}"}
+
 
      def Scrape(self):
           while True:
@@ -52,7 +56,6 @@ class Scraper:
                     time.sleep(self.sleeper)
      
 
-     
      def Check(self, resp):
           nazwa = resp["selected_product"]["nazwa"]
           slug = resp["selected_product"]["slug"]
@@ -70,11 +73,13 @@ class Scraper:
                time.sleep(10)
                print(f"{datetime.now()} | No new items")
 
+
      def Webhook(self, nazwa):
           for x in self.webhooks:
                webhook = DiscordWebhook(url=x, rate_limit_retry=True)
                embed = DiscordEmbed(title="New item", description=f"{nazwa}, {self.last}", color='03b2f8')
                webhook.add_embed(embed)
                webhook.execute()
+
 
 Scraper().Scrape()
