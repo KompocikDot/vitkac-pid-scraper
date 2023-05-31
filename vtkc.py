@@ -54,7 +54,6 @@ class Scraper:
             raise Exception("Invalid setup")
 
     def save_last_scraped(self) -> None:
-
         self.config["last_pid"] = self.last
         self.config["last_item_name"] = self.last_item_name
         self.config["last_item_slug"] = self.last_item_slug
@@ -77,7 +76,7 @@ class Scraper:
                     proxies=self.proxy,
                 )
 
-                if resp.status_code != 200:
+                if not resp.ok:
                     time.sleep(self.wait_seconds)
                     logging.info("No pid created")
                 else:
