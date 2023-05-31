@@ -1,85 +1,119 @@
-import requests
-from random import choice
+import logging
 import time
-from discord_webhook import DiscordWebhook, DiscordEmbed
-from datetime import datetime
+from random import choice
+from typing import Dict, Optional
+
+import requests
+import toml
+from discord_webhook import DiscordEmbed, DiscordWebhook
+
+LOGGING_FORMAT = "[%(asctime)s] %(message)s"
+logging.basicConfig(
+    level=logging.INFO,
+    format=LOGGING_FORMAT,
+    handlers=[logging.FileHandler("scraper.log"), logging.StreamHandler()],
+)
+
 
 class Scraper:
-     def __init__(self):
-          self.proxy = self.Get_proxy()
-          self.webhooks = ["", ""]
-          self.last = 1604825
-          self.sleeper = 10
-          self.Read_last()
+    def __init__(self) -> None:
+        self.proxy = self.retrieve_proxy()
+        self.last: Optional[int]
+        self.wait_seconds: int = 10
+        self.config: Dict
+        self.read_startup_data()
 
+    def read_startup_data(self) -> None:
+        with open("data.toml", "r") as f:
+            self.config = toml.load(f)
 
-     def Read_last(self):
-          with open("data.txt", "r") as f:
-               data = f.readlines()
+        if last := self.config.get("last_pid"):
+            self.last = last + 1
 
-          self.last = int(data[0].strip())
-          self.last_item_name = data[1].strip()
-          self.last_item_slug = data[2].strip()
+        self.last_item_name = self.config.get("last_item_name", "")
+        self.last_item_slug = self.config.get("last_item_slug", "")
+        self.webhooks = self.config.get("webhooks", [])
 
+        errors = False
+        if not self.last:
+            logging.exception("variable last_pid in data.toml is not set")
+            errors = True
+        if not self.last_item_name:
+            logging.exception("variable last_item_name in data.toml is not set")
+            errors = True
+        if not self.last_item_slug:
+            logging.exception("variable last_item_slug in data.toml is not set")
+            errors = True
+        if not self.webhooks or "" in self.webhooks:
+            logging.exception(
+                "variable webhooks in data.toml is not set or webhooks are empty strings"
+            )
+            errors = True
 
-     def Save_last(self):
-          with open("data.txt", "w") as f:
-               data = [self.last, self.last_item_name, self.last_item_slug]
-               f.writelines(data)
+        if errors:
+            raise Exception("Invalid setup")
 
+    def save_last_scraped(self) -> None:
 
-     def Get_proxy(self):
-          with open("proxy.txt", "r") as f:
-               proxy_list = f.readlines()
-               proxy = choice(proxy_list).split(":")
+        self.config["last_pid"] = self.last
+        self.config["last_item_name"] = self.last_item_name
+        self.config["last_item_slug"] = self.last_item_slug
 
-               ip = proxy[0]
-               port = proxy[1]
-               usr = proxy[2]
-               pwd = proxy[3]
-               return {"http": f"http://{usr}:{pwd}@{ip}:{port}", "https": f"https://{usr}:{pwd}@{ip}:{port}"}
+        with open("data.toml", "w") as toml_write:
+            toml.dump(self.config, toml_write)
 
+    def retrieve_proxy(self) -> Dict[str, str]:
+        with open("proxy.txt", "r") as f:
+            proxy_list = f.readlines()
+            ip, port, usr, pwd = choice(proxy_list).split(":")
 
-     def Scrape(self):
-          while True:
-               try:
-                    resp = requests.get(f"https://www.vitkac.com/product/axGetProductDetail?id={self.last}", proxy=self.proxy)
-                    if resp.status_code != 200:
-                         time.sleep(self.sleeper)
-                         print(f"{datetime.now()} | No pid created")
-                    else:
-                         self.Check(resp.json())
+            return {"http": f"http://{usr}:{pwd}@{ip}:{port}"}
 
-               except Exception as e:
-                    print(f"{datetime.now()} | ERROR - {e}")
-                    self.proxy = self.Get_proxy()
-                    time.sleep(self.sleeper)
-     
+    def scrape_data(self) -> None:
+        while True:
+            try:
+                resp = requests.get(
+                    f"https://www.vitkac.com/product/axGetProductDetail?id={self.last}",
+                    proxies=self.proxy,
+                )
 
-     def Check(self, resp):
-          nazwa = resp["selected_product"]["nazwa"]
-          slug = resp["selected_product"]["slug"]
-          pid = self.last
+                if resp.status_code != 200:
+                    time.sleep(self.wait_seconds)
+                    logging.info("No pid created")
+                else:
+                    self.check_if_new_item(resp.json())
 
-          if nazwa != self.last_item_name:
-               self.Webhook(nazwa)
-               self.last += 1
-               self.last_item_name = nazwa
-               self.last_item_slug = slug
-               self.Save_last()
-               print(f"{datetime.now()} | New item")
+            except Exception as e:
+                logging.error(e)
+                self.proxy = self.retrieve_proxy()
+                time.sleep(self.wait_seconds)
 
-          else:
-               time.sleep(10)
-               print(f"{datetime.now()} | No new items")
+    def check_if_new_item(self, resp: Dict) -> None:
+        item_name = resp["selected_product"]["nazwa"]
+        item_slug = resp["selected_product"]["slug"]
 
+        if item_name != self.last_item_name and self.last:
+            self.send_webhook(item_name)
+            logging.info(
+                f"New item found: [Pid: {self.last}] {self.last_item_name[:30]}"
+            )
 
-     def Webhook(self, nazwa):
-          for x in self.webhooks:
-               webhook = DiscordWebhook(url=x, rate_limit_retry=True)
-               embed = DiscordEmbed(title="New item", description=f"{nazwa}, {self.last}", color='03b2f8')
-               webhook.add_embed(embed)
-               webhook.execute()
+            self.last += 1
+            self.last_item_name = item_name
+            self.last_item_slug = item_slug
+            self.save_last_scraped()
 
+        else:
+            time.sleep(10)
+            logging.info("No new items")
 
-Scraper().Scrape()
+    def send_webhook(self, item_name: str) -> None:
+        for x in self.config.get("webhooks", []):
+            webhook = DiscordWebhook(url=x, rate_limit_retry=True)
+            embed = DiscordEmbed(
+                title="New item",
+                description=f"{item_name}, {self.last}",
+                color="03b2f8",
+            )
+            webhook.add_embed(embed)
+            webhook.execute()
